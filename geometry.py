@@ -11,6 +11,9 @@ def generate_le_te(r,beta,chord):
     le_points = [r,]
 
     # Generate TE Points in xyz
-    te_points = 
+    te_points = [r]
 
     return le_points, te_points
+
+
+def 

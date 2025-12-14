@@ -1,100 +1,115 @@
 ## Define All Aerodynamic Properties for Given Propeller Geometry
 
+# External Libraries
 import jax
 import jax.numpy as jnp
 from jax import jit, vmap, grad, lax
 
 import matplotlib.pyplot as plt
+from airflow import AirflowParams
+
+# Internal Libraries
+from coefficients import parametric_coeffs
+from solvers import NewtonSolver
 
 
-
-
-# Air properties
-rho = 1.225 # Density of air in kg/m^3
-
-
+### Integrand Functions
 
 def radial_stops(R, r_hub, n):
     # Return radial node centers and dr for integration
-    r = jnp.linspace(r_hub + (R - r_hub) / (2 * N), R - (R - r_hub) / (2 * N), N)
-    dr = (R - r_hub) / N
+    r = jnp.linspace(r_hub + (R - r_hub) / (2 * n), R - (R - r_hub) / (2 * n), n)
+    dr = (R - r_hub) / n
     return r, dr
 
-### ---Parametric Coefficients---
-# (good for approximate analysis, use LUT for more accuracy)
+def angular_stops(n_phi):
+    # Return angular node centers and dphi for integration
+    phi = jnp.linspace((jnp.pi / n_phi), (2 * jnp.pi) - (jnp.pi / n_phi), n_phi)
+    dphi = (2 * jnp.pi) / n_phi
+    return phi, dphi
 
-alpha = jnp.radians(jnp.linspace(0, 360, 100))  # Angle of attack in radians
+def thrust_residual(V_ia_0, tr_params):
+    """
+    Calculate thrust residual for an annular element at radius r using AirflowParams dataclass.
+    """
+    # Unpack parameters
+    N, c, phi, r, dr, psi, dpsi = tr_params.N, tr_params.c, tr_params.phi, tr_params.r, tr_params.dr, tr_params.psi, tr_params.dphi, 
+    V_x, V_yz = tr_params.V_x, tr_params.V_yz
+    rho, C_L, C_D = tr_params.rho, tr_params.C_L, tr_params.C_D
 
-def parametric_coeffs(alpha):
-    # Return parametric estimations of lift, drag, and moment coefficients based on angle of attack
-    # Coefficient parameters
+    # Calculate Flow Properties
+    xi = jnp.arctan(V_yz / (V_x + V_ia_0))    # wake skew angle
+    V_yz_perp = V_yz * jnp.sin(psi)           # Perpendicular component of velocity in yz plane
 
-
-    # Set piecewise function between 20 and 160 degrees
-    stall_low  = alpha >= jnp.radians(20)
-    stall_high = alpha >  jnp.radians(160)
-    stall      = stall_low & ~stall_high   # 20°–160°
+    V_rel = jnp.sqrt((V_x + V_ia) ** 2 + (tr_params.omega * r + V_yz_perp) ** 2)  # relative velocity
     
-    C_La = 0.11     # Lift curve slope per radian (ARAD10)
-    C_D90 = 1.98    # Drag coefficient at 90 degrees angle of attack (flat plate)
-    C_D0 = 0.018    # Zero lift drag coefficient (ARAD10)
+    V_ia = V_ia_0 * (1 + ((15 * jnp.pi) / 32) * jnp.tan(xi / 2) * (r / tr_params.R) * jnp.cos(phi))  # Inflow model for skewed rotor
 
-    print(C_La, C_D0)
 
-    # Coefficients in non-stall region
-    C_L_unstall = C_La * alpha                                                          # Lift Coefficient
-    C_T_unstall = C_D0 * jnp.cos(alpha)                                                 # Tangential Force Coefficient
-    C_N_unstall = (C_L_unstall + C_T_unstall*jnp.sin(alpha)) / (jnp.cos(alpha))         # Normal Force Coefficient
-    C_D_unstall = C_N_unstall * jnp.sin(alpha) + C_T_unstall* jnp.cos(alpha)            # Drag Coefficient
-    C_M_unstall = -C_N_unstall*(0.25-0.175*(1-2*alpha/jnp.pi))                          # Moment Coefficient
-    
-    # Coefficients in stall region based on flat plate model
-    C_N_stall = C_D90 * (jnp.sin(alpha)) / (0.56+0.44*jnp.sin(alpha))                   # Normal Force Coefficient
-    C_T_stall = 0.5*C_D0 * jnp.cos(alpha)                                               # Tangential Force Coefficient
-    C_L_stall = C_N_stall*jnp.cos(alpha)-C_T_stall*jnp.sin(alpha)                       # Lift Coefficient
-    C_D_stall = C_N_stall*jnp.sin(alpha)+C_T_stall*jnp.cos(alpha)                       # Drag Coefficient
-    C_M_stall = -C_N_unstall*(0.25-0.175*(1-2*alpha/jnp.pi))                            # Moment Coefficient
+    # Momentum Theory about annular element 
+    dT_momentum = (2 * rho * r * V_ia * jnp.sqrt((V_x + V_ia) ** 2 + V_yz ** 2) * dpsi * dr)  
+    # Blade Element Theory about annular element 
+    dT_blade =( 
+        (N / (4 * jnp.pi)) * rho * c * V_rel ** 2 
+        * (C_L * jnp.cos(phi) + C_D * jnp.sin(phi))* dpsi* dr
+        # tip and root loss factors
+        * f_tip * f_root
+        )
 
-    # Piecewise coefficients
-    C_L = jnp.where(stall, C_L_stall,
-           jnp.where(stall_high, C_L_stall, C_L_unstall))
+    return jnp.sum(dT_momentum - dT_blade)
 
-    C_D = jnp.where(stall, C_D_stall,
-           jnp.where(stall_high, C_D_stall, C_D_unstall))                              
-    return C_L, C_D
 
-C_L, C_D = parametric_coeffs(alpha)
 
-# Debug plot of parametric coefficients
-plt.plot(jnp.degrees(alpha), C_L)
-plt.plot(jnp.degrees(alpha), C_D)
-plt.legend(["C_L", "C_D"])
-plt.title("Parametric Lift and Drag Coefficient vs Angle of Attack")
-plt.xlabel("Angle of Attack (degrees)")
-plt.ylabel("Lift Coefficient C_L")
-plt.show()
 
-# def bemt_annulus(w, T, D):
-    # Solve for differential torque and thrust of annulus elements
+def induced_velocity(params):
+    # Unpack Parameters
+
+    # Minimise Thrust Residual to Solve for Induced Velocity
+    solve_annulus = lambda
+    thrust_residual_fun = lambda V_ia_0, tr_params: thrust_residual(V_ia_0, tr_params)
+    solver = NewtonSolver(thrust_residual_fun)
+    # Test Case Single Annulus
+    V_ia0_guess = 0.1 * params.V_x  # Initial guess for induced velocity
+    V_ia = solver.solve(V_ia0_guess, tr_params)
+
+
+
+    # Solve for induced velocity using momentum theory and blade element theory
+    # First Calculate 
+    return
+
     
 
 
 
+    
 
 
 
-
+  
 
 
 
 # Calculate Torque, Thrust, and Power Coefficients in Propeller Frame
 
-
-
-
 if __name__ == "__main__":
-    # Example usage
-    R = 0.5  # Propeller radius in meters
-    r_hub = 0.15  # Hub radius in meters
-    n = 10  # Number of radial stations
+    # Air Properties
+    rho = 1.225  # Air density in kg/m^3
+
+
+    # Example/Test Case Parameters
+    R = 0.2  # Propeller radius in meters
+    r_hub = 0.05  # Hub radius in meters
+    n_r = 10  # Number of radial stations
+    n_phi = 20  # Number of angular stations
+
+    # Define integrands for Internal Solver use
+    alpha = jnp.radians(jnp.linspace(-180, 180, 100))  # Angle of attack in radians
+    r, dr = radial_stops(R, r_hub, n_r)  # Radial stations from hub to tip
+    phi, dphi = angular_stops(n_phi)  # Angular stations around the propeller
+
+    # Solve Induced Velocity using BEMT
+    C_L, C_D, C_M = parametric_coeffs(alpha, debug_plots=False)  # Get parametric coefficients
+
+
+
 
