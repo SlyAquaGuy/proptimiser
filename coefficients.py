@@ -38,7 +38,7 @@ def parametric_coeffs(alphain, debug=False):
     C_M = jnp.sign(alphain)*jnp.where(stall, C_M_stall, C_M_unstall)
 
 
-    
+
 
 
     if debug:
@@ -53,3 +53,9 @@ def parametric_coeffs(alphain, debug=False):
         plt.show()
     
     return C_L, C_D, C_M
+
+def lookup_coeffs(alphain):
+    # Placeholder for future lookup table implementation
+    raise NotImplementedError("Lookup table coefficients not yet implemented.")
+    # Look up/estimate CL/CD from CFD data tables
+    # Input parameters of alpha, Re, Ma, airfoil type. Return suitable coefficients that minimise chord.

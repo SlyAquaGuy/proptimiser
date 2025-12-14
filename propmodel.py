@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 from airflow import AirflowParams
 
 # Internal Libraries
+from init import inputs
 from coefficients import parametric_coeffs
 from solvers import NewtonSolver
 
@@ -33,16 +34,19 @@ def thrust_residual(V_ia_0, tr_params):
     """
     # Unpack parameters
     N, c, phi, r, dr, psi, dpsi = tr_params.N, tr_params.c, tr_params.phi, tr_params.r, tr_params.dr, tr_params.psi, tr_params.dphi, 
-    V_x, V_yz = tr_params.V_x, tr_params.V_yz
+    V_x, V_yz, omega = tr_params.V_x, tr_params.V_yz, tr_params.omega
     rho, C_L, C_D = tr_params.rho, tr_params.C_L, tr_params.C_D
 
     # Calculate Flow Properties
     xi = jnp.arctan(V_yz / (V_x + V_ia_0))    # wake skew angle
     V_yz_perp = V_yz * jnp.sin(psi)           # Perpendicular component of velocity in yz plane
 
-    V_rel = jnp.sqrt((V_x + V_ia) ** 2 + (tr_params.omega * r + V_yz_perp) ** 2)  # relative velocity
-    
-    V_ia = V_ia_0 * (1 + ((15 * jnp.pi) / 32) * jnp.tan(xi / 2) * (r / tr_params.R) * jnp.cos(phi))  # Inflow model for skewed rotor
+    V_rel = jnp.sqrt((V_x + V_ia) ** 2 + (omega * r + V_yz_perp) ** 2)  # relative velocity
+
+    # Inflow Model for Skewed Rotor (Pitt & Peters 1981)
+    V_ia = V_ia_0 * (1 + ((15 * jnp.pi) / 32) * jnp.tan(xi / 2) * (r / tr_params.R) * jnp.cos(phi))  
+
+    # Implement DTU model here to improve accuracy?
 
 
     # Momentum Theory about annular element 
@@ -58,18 +62,18 @@ def thrust_residual(V_ia_0, tr_params):
     return jnp.sum(dT_momentum - dT_blade)
 
 
-
-
 def induced_velocity(params):
     # Unpack Parameters
-
+    inflow_model = inputs.inflow_model
+    rho = 
     # Minimise Thrust Residual to Solve for Induced Velocity
-    solve_annulus = lambda
+    solve_annulus = lambda 
     thrust_residual_fun = lambda V_ia_0, tr_params: thrust_residual(V_ia_0, tr_params)
     solver = NewtonSolver(thrust_residual_fun)
     # Test Case Single Annulus
     V_ia0_guess = 0.1 * params.V_x  # Initial guess for induced velocity
     V_ia = solver.solve(V_ia0_guess, tr_params)
+    
 
 
 
