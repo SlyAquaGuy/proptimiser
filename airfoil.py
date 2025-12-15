@@ -11,7 +11,7 @@ def parametric_coeffs(params, debug=False):
     # Return parametric estimations of lift, drag, and moment coefficients based on angle of attack
     # Calculate effective angle of attack for the airfoil
 
-    alpha = params.beta-params.phi
+    alpha = params.beta[:,None]-params.phi
     # Coefficient parameters
     alphaabs = jnp.abs(alpha)  # Use absolute value of alpha for symmetry
     # Set piecewise function between 20 and 160 degrees
@@ -63,9 +63,8 @@ def lookup_coeffs(params):
     return C_L, C_D, C_M
 
 def aero_coeffs(params):
-    operand = params
     # Select Method to Establish Aerodynamic Coefficients
     C_L, C_D, C_M = lax.switch(params.coeff_method,
                     [parametric_coeffs, lookup_coeffs],
-                    operand)
+                    params)
     return C_L, C_D, C_M

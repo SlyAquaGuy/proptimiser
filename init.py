@@ -12,9 +12,9 @@ class Inputs:
     opt_tol: float = 1e-6
 
     # Newton solver settings
-    newton_max_iter: int = 15
+    newton_max_iter: int = 100
     newton_eps: float = 1e-4
-    newton_damping: float = 0.95
+    newton_damping: float = 0.1
 
 
 
@@ -23,9 +23,9 @@ class Inputs:
 
     ## Discretisation settings
     # Radial discretisation
-    n_r: int = 5
+    n_r: int = 20
     # Azimuthal discretisation (for skewed inflow)
-    n_psi: int = 500
+    n_psi: int = 20
 
     ## Physical / modelling flags
     use_prandtl_tip_loss: bool = False
@@ -35,24 +35,28 @@ class Inputs:
     verbose: bool = False
     record_convergence_history: bool = False
 
-# Freeze runtime parameters for the propeller model
 @dataclass(frozen=True)
 class Params:
-    # Geometry & discretization
-    N: int                  # number of blades
-    R: jnp.ndarray          # propeller radius
-    c: jnp.ndarray          # chord length at radial stations
-    beta: jnp.ndarray       # blade twist angle (radians)
+    # Domain of Integration
     r: jnp.ndarray          # radial stations
     dr: jnp.ndarray         # radial spacing
     psi: jnp.ndarray        # azimuthal stations
     dpsi: jnp.ndarray       # azimuthal spacing
 
+
+    # Geometry & discretization
+    N: jnp.ndarray          # number of blades
+    R: jnp.ndarray          # propeller radius
+    c: jnp.ndarray          # chord length at radial stations
+    beta: jnp.ndarray       # blade twist angle (radians)
+
+
     # Inflow / rotor state
     V_x: jnp.ndarray        # axial inflow velocity
     V_yz: jnp.ndarray       # tangential / side inflow velocity
     omega: jnp.ndarray      # rotational speed
-    V_ia_0: jnp.ndarray     # initial guess for induced velocity
+    V_ia_0: jnp.ndarray     # induced velocity at propeller disc center (Nr,1)
+    V_ia: jnp.ndarray       # induced velocity (Nr, Npsi)
     phi: jnp.ndarray        # blade angle (calculated from V_ia)
 
 
@@ -60,7 +64,7 @@ class Params:
     rho: float = 1.225      # air density
 
     # Model Selection
-    inflow_model: int = 1 # 0 = basic, 1 = Pitt & Peters, 2 = DTU
+    inflow_model: int = 0 # 0 = basic, 1 = Pitt & Peters, 2 = DTU
     coeff_method: int = 0 # 0 = parametric, 1 = lookup table
     tip_loss_model: int = 0 # 0 = none, 1 = Prandtl
     root_loss_model: int = 0 # 0 = none, 1 = Prandtl

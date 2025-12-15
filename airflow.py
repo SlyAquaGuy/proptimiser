@@ -1,6 +1,7 @@
 # Airflow Definitions, Boundary Conditions for Momentum Theory
 from dataclasses import replace
 import jax.numpy as jnp
+from init import Inputs
 from jax import lax
 
 ## Dimensionless Constants
@@ -18,14 +19,14 @@ def reynolds(rho, V, c, mu):
 
 def simple(params):
     # Simple uniform inflow model
-    V_ia = jnp.ones_like(params.psi)*params.V_ia_0
+    V_ia = jnp.full((params.r.size, params.psi.size), jnp.average(params.V_ia_0))
     return V_ia
 
 def pitt_peters(params):
     # Unpack parameters
-    V_ia_0 = params.V_ia_0
+    V_ia_0 = params.V_ia_0[:,None]
     V_x, V_yz = params.V_x, params.V_yz
-    r,psi,R = params.r, params.psi, params.R
+    r,psi,R = params.r[:,None], params.psi[None,:], params.R
 
     xi = jnp.arctan(V_yz / (V_x + V_ia_0))    # wake skew angle
     # Inflow model for skewed rotor (Pitt & Peters 1981)
@@ -33,7 +34,7 @@ def pitt_peters(params):
     return V_ia
 
 def dtu_model(params):
-    V_ia = jnp.ones_like(params.psi)*params.V_ia_0
+    V_ia = jnp.full((params.r.size, params.psi.size), jnp.average(params.V_ia_0))
     # Implement DTU model here to improve accuracy? /doi.org/10.5194/wes-5-1-2020
     return V_ia  # Placeholder, return initial guess for now
 
