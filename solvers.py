@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 from typing import Callable
 
-from init import inputs
+from init import Inputs
 
 class NewtonSolver:
     """
@@ -24,40 +24,24 @@ class NewtonSolver:
         self.fun = fun
 
         # Pull numerical settings from inputs (snapshot at construction time)
-        self.n_iter = inputs.newton_n_iter
-        self.damping = inputs.newton_damping
-        self.eps = inputs.newton_eps
+        self.n_iter = Inputs.newton_max_iter
+        self.damping = Inputs.newton_damping
+        self.eps = Inputs.newton_eps
 
         # Autodiff Jacobian
         # jacfwd is usually best for small systems
         self._jac = jax.jacfwd(fun)
 
     def step(self, x, *args):
-        """
-        Perform one Newton update.
-        """
-        F = self.fun(x, *args)
-        J = self._jac(x, *args)
+        F = self.fun(x, *args)           # (m,)
+        J = self._jac(x, *args)          # (m,m)
 
-        # Scalar unknown
-        def scalar_update():
-            return F / (J + self.eps)
-
-        # Vector unknown
-        def vector_update():
-            return jnp.linalg.solve(
-                J + self.eps * jnp.eye(J.shape[0], dtype=J.dtype),
-                F,
-            )
-
-        dx = jax.lax.cond(
-            jnp.ndim(F) == 0,
-            lambda _: scalar_update(),
-            lambda _: vector_update(),
-            operand=None,
+        dx = jnp.linalg.solve(
+            J + self.eps * jnp.eye(J.shape[0], dtype=J.dtype),
+            F,
         )
-
         return x - self.damping * dx
+
 
     def solve(self, x0, *args):
         """

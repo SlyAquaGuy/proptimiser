@@ -6,6 +6,6 @@ from jax.scipy.optimize import minimize
 from jax import random
 from typing import Callable
 # Internal Libraries
-from coefficients import parametric_coeffs
+from airfoil import parametric_coeffs
 from solvers import NewtonSolver
 ### Propeller Optimization Framework

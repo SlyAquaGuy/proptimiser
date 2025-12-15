@@ -3,6 +3,8 @@
 import jax.numpy as jnp
 import numpy as np
 
+
+
 def generate_le_te(r,beta,chord):
     # Calculate Chord Offset
     chord_offset = 0.2*max(chord)
@@ -14,6 +16,4 @@ def generate_le_te(r,beta,chord):
     te_points = [r]
 
     return le_points, te_points
-
-
-def 
+    
