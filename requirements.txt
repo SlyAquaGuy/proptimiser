@@ -6,5 +6,6 @@ trame-matplotlib
 matplotlib
 numpy
 jax
-jaxopts
+jaxopt
+optax
 scipy

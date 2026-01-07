@@ -23,7 +23,7 @@ class Inputs:
 
     ## Discretisation settings
     # Radial discretisation
-    n_r: int = 20
+    n_r: int = 15
     # Azimuthal discretisation (for skewed inflow)
     n_psi: int = 20
 
@@ -32,7 +32,7 @@ class Inputs:
     use_prandtl_root_loss: bool = False
 
     # Diagnostics / debugging
-    verbose: bool = False
+    verbose: bool = True
     record_convergence_history: bool = False
 
 @dataclass(frozen=True)
@@ -55,16 +55,15 @@ class Params:
     V_x: jnp.ndarray        # axial inflow velocity
     V_yz: jnp.ndarray       # tangential / side inflow velocity
     omega: jnp.ndarray      # rotational speed
-    V_ia_0: jnp.ndarray     # induced velocity at propeller disc center (Nr,1)
-    V_ia: jnp.ndarray       # induced velocity (Nr, Npsi)
-    phi: jnp.ndarray        # blade angle (calculated from V_ia)
+
+    V_ia_0: jnp.ndarray     # initial guess/storage for V_ia_0
 
 
     # Physical properties
     rho: float = 1.225      # air density
 
     # Model Selection
-    inflow_model: int = 0 # 0 = basic, 1 = Pitt & Peters, 2 = DTU
+    inflow_model: int = 1 # 0 = basic, 1 = Pitt & Peters, 2 = DTU
     coeff_method: int = 0 # 0 = parametric, 1 = lookup table
     tip_loss_model: int = 0 # 0 = none, 1 = Prandtl
     root_loss_model: int = 0 # 0 = none, 1 = Prandtl

@@ -3,15 +3,16 @@ import jax
 from jax import numpy as jnp
 from jax import lax
 import matplotlib.pyplot as plt
+from airflow import calc_phi
 
 ## ---Parametric Coefficients---
 # (good for approximate analysis, use LUT for more accuracy)
 
-def parametric_coeffs(params, debug=False):
+def parametric_coeffs(V_ia, params, debug=False):
     # Return parametric estimations of lift, drag, and moment coefficients based on angle of attack
     # Calculate effective angle of attack for the airfoil
-
-    alpha = params.beta[:,None]-params.phi
+    phi = calc_phi(V_ia, params)
+    alpha = params.beta[:,None]-phi
     # Coefficient parameters
     alphaabs = jnp.abs(alpha)  # Use absolute value of alpha for symmetry
     # Set piecewise function between 20 and 160 degrees
@@ -55,16 +56,16 @@ def parametric_coeffs(params, debug=False):
     
     return C_L, C_D, C_M
 
-def lookup_coeffs(params):
+def lookup_coeffs(V_ia, params):
     # Placeholder for future lookup table implementation, use parametric for now to allow compile
-    C_L, C_D, C_M  = parametric_coeffs(params)
+    C_L, C_D, C_M  = parametric_coeffs(V_ia, params)
     # Look up/estimate CL/CD from CFD data tables
     # Input parameters of alpha, Re, Ma, airfoil type. Return suitable coefficients that minimise chord.
     return C_L, C_D, C_M
 
-def aero_coeffs(params):
+def aero_coeffs(V_ia, params):
     # Select Method to Establish Aerodynamic Coefficients
     C_L, C_D, C_M = lax.switch(params.coeff_method,
                     [parametric_coeffs, lookup_coeffs],
-                    params)
+                    V_ia, params)
     return C_L, C_D, C_M

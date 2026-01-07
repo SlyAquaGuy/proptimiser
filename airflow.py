@@ -5,44 +5,50 @@ from init import Inputs
 from jax import lax
 
 ## Dimensionless Constants
-def mach(V, a):
+def calc_mach(V, a):
     # Calculate Mach number
     return V / a
-def reynolds(rho, V, c, mu):
+def calc_reynolds(rho, V, c, mu):
     # Calculate Reynolds number
     return (rho * V * c) / mu
+
+def calc_phi(V_ia, params):
+    print("V_ia Shape", jnp.shape(V_ia))
+    V_x, V_yz, omega, r, psi = params.V_x, params.V_yz, params.omega, params.r[:,None], params.psi[None,:]
+    V_yz_perp = V_yz * jnp.sin(psi)
+    phi = jnp.arctan((V_x + V_ia)/(omega * r + V_yz_perp))
+    return phi
 
 ## Inflow Model Definitions and Selection
 # 0 - Simple uniform inflow
 # 1 - Pitt & Peters (1981)
 # 2 - DTU model
 
-def simple(params):
+def simple(V_ia_0, params):
+    n_psi = len(params.psi)
     # Simple uniform inflow model
-    V_ia = jnp.full((params.r.size, params.psi.size), jnp.average(params.V_ia_0))
+    V_ia = jnp.tile(V_ia_0, (1,n_psi))
     return V_ia
 
-def pitt_peters(params):
+def pitt_peters(V_ia_0, params):
     # Unpack parameters
-    V_ia_0 = params.V_ia_0[:,None]
     V_x, V_yz = params.V_x, params.V_yz
     r,psi,R = params.r[:,None], params.psi[None,:], params.R
-
-    xi = jnp.arctan(V_yz / (V_x + V_ia_0))    # wake skew angle
+    xi = jnp.arctan(V_yz / (V_x + V_ia_0))    # wake skew angle 
     # Inflow model for skewed rotor (Pitt & Peters 1981)
     V_ia = V_ia_0 * (1 + ((15 * jnp.pi) / 32) * jnp.tan(xi / 2) * (r / R) * jnp.cos(psi))
     return V_ia
 
-def dtu_model(params):
-    V_ia = jnp.full((params.r.size, params.psi.size), jnp.average(params.V_ia_0))
+def dtu_model(V_ia_0, params):
+    V_ia = jnp.full((params.r.size, params.psi.size), jnp.average(V_ia_0))
     # Implement DTU model here to improve accuracy? /doi.org/10.5194/wes-5-1-2020
     return V_ia  # Placeholder, return initial guess for now
 
-def inflow_model(params):
+def inflow_model(V_ia_0, params):
     # Calculate inflow velocity based on selected model
     return lax.switch(params.inflow_model,
                     [simple, pitt_peters, dtu_model],
-                    params
+                    V_ia_0, params
                     )
 
 
