@@ -40,9 +40,11 @@ def pitt_peters(V_ia_0, params):
     return V_ia
 
 def dtu_model(V_ia_0, params):
-    V_ia = jnp.full((params.r.size, params.psi.size), jnp.average(V_ia_0))
+    n_psi = len(params.psi)
+    # Simple uniform inflow model
+    V_ia = jnp.tile(V_ia_0, (1,n_psi))
     # Implement DTU model here to improve accuracy? /doi.org/10.5194/wes-5-1-2020
-    return V_ia  # Placeholder, return initial guess for now
+    return V_ia  # Placeholder, return simple guess for now
 
 def inflow_model(V_ia_0, params):
     # Calculate inflow velocity based on selected model

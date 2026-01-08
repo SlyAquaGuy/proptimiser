@@ -9,14 +9,12 @@ class Inputs:
 
     # Outer-loop optimisation (Optax / similar)
     opt_max_iter: int = 200
-    opt_tol: float = 1e-6
+    opt_tol: float = 1e-4
 
     # Newton solver settings
     newton_max_iter: int = 100
     newton_eps: float = 1e-4
     newton_damping: float = 0.1
-
-
 
     # Thrust constraint
     thrust: float = 10.0 # Newtons

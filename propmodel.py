@@ -84,7 +84,7 @@ def induced_velocity(params):
     print("Residual min/max:", res_check.min(), res_check.max())
 
     # Newton Solver for Induced Velocity
-    solver = jaxopt.Broyden(fun=thrust_residual, maxiter=10, tol=Inputs.opt_tol, max_stepsize=0.1, implicit_diff=True)
+    solver = jaxopt.Broyden(fun=thrust_residual, maxiter=100, tol=Inputs.newton_eps, max_stepsize=0.8, implicit_diff=True)
 
     (V_ia_0, info) = solver.run(V_ia_init, params)
 
@@ -92,7 +92,6 @@ def induced_velocity(params):
     if Inputs.verbose:
         res_check = thrust_residual(V_ia_0, params)
         print("Residuals Check", res_check)
-
     V_ia = inflow_model(V_ia_0, params)
 
     return V_ia
@@ -108,12 +107,13 @@ if __name__ == "__main__":
     if demo_solve == "single":
 
         psi,dpsi = angular_stops(Inputs.n_psi)
-
+        jax.config.update("jax_enable_x64", True)
+        jax.config.update("jax_debug_nans", True)
         #Update Parameters Class
         params = Params(
                     N = 2,
                     R = jnp.array([0.5]),
-                    c = jnp.array([0.01]),
+                    c = jnp.array([0.05]),
                     beta = jnp.array([jnp.radians(20)]),
 
                     r = jnp.array([0.3]),
@@ -126,26 +126,29 @@ if __name__ == "__main__":
                     V_yz = jnp.array([3.0]),
                     omega = jnp.array([400]),
 
-                    V_ia_0 = jnp.array([0.1])
+                    V_ia_0 = jnp.array([20.0])[:,None]
                 )
         # Register dataclass as a PyTree
         jax.tree_util.register_dataclass(Params)
         print()
 
         # Solve
-        solve_annulus(params)
+        V_ia = induced_velocity(params)
+
+
         # Plot Induced Velocity Distribution about singular annulus
-        plt.plot(jnp.degrees(params.psi), inflow_model(params))
+        plt.plot(jnp.degrees(params.psi), V_ia[1])
         plt.title("Induced Velocity Distribution around Propeller Annulus")
         plt.xlabel("Angle (degrees)")
         plt.ylabel("Induced Velocity (m/s)")
         plt.show()
 
     elif demo_solve == "flat":
-        
+        jax.config.update("jax_enable_x64", True)
+        jax.config.update("jax_debug_nans", True)
         psi,dpsi = angular_stops(Inputs.n_psi)
         r,dr = radial_stops(0.5, 0.05, Inputs.n_r)
-        V_ia_0 = jnp.full_like(r,jnp.array([5.0]))[:,None]
+        V_ia_0 = jnp.full_like(r,jnp.array([10.0]))[:,None]
 
         #Update Parameters Class
         params = Params(
@@ -161,7 +164,7 @@ if __name__ == "__main__":
                     dpsi = dpsi,
 
                     V_x = jnp.array([10.0]),
-                    V_yz = jnp.array([0]),
+                    V_yz = jnp.array([2.0]),
                     omega = jnp.array([400]),
 
                     V_ia_0 = V_ia_0
@@ -171,19 +174,15 @@ if __name__ == "__main__":
         
         # Solve Induced Velocity
         V_ia = induced_velocity(params)  # shape (Nr, Npsi)
-
-        print(V_ia)
         
-
         # Create radial and azimuthal grids
-        r, theta = np.meshgrid(np.array(params.r), np.array(params.psi)), 
+        #r, theta = np.meshgrid(np.array(params.r), np.array(params.psi)), 
 
         # Plot heatmap
-        fig, ax = plt.subplot(subplot_kw={"projection": "polar"})
-        plt.contourf(r, theta, V_ia, shading='auto', cmap='viridis')
+        fig, ax = plt.subplots(subplot_kw={"projection": "polar"})
+        plt.contourf(psi, r, V_ia, shading='auto', cmap='viridis')
         plt.colorbar(label='Induced Velocity [m/s]')
         plt.xlabel('X [m]')
         plt.ylabel('Y [m]')
         plt.title('Induced Velocity over Propeller Disk')
-        plt.axis('equal')
         plt.show()
