@@ -11,8 +11,9 @@ from airflow import calc_phi
 def parametric_coeffs(V_ia, params, debug=False):
     # Return parametric estimations of lift, drag, and moment coefficients based on angle of attack
     # Calculate effective angle of attack for the airfoil
+    beta = params.beta
     phi = calc_phi(V_ia, params)
-    alpha = params.beta[:,None]-phi
+    alpha = beta-phi
     # Coefficient parameters
     alphaabs = jnp.abs(alpha)  # Use absolute value of alpha for symmetry
     # Set piecewise function between 20 and 160 degrees
@@ -27,8 +28,8 @@ def parametric_coeffs(V_ia, params, debug=False):
     # Coefficients in non-stall region
     C_L_unstall = C_La * alphaabs                                                          # Lift Coefficient
     C_T_unstall = C_D0 * jnp.cos(alphaabs)                                                 # Tangential Force Coefficient
-    C_N_unstall = (C_L_unstall + C_T_unstall*jnp.sin(alphaabs)) / (jnp.cos(alphaabs))         # Normal Force Coefficient
-    C_D_unstall = C_N_unstall * jnp.sin(alphaabs) + C_T_unstall* jnp.cos(alphaabs)            # Drag Coefficient
+    C_N_unstall = (C_L_unstall + C_T_unstall*jnp.sin(alphaabs)) / (jnp.cos(alphaabs))      # Normal Force Coefficient
+    C_D_unstall = C_N_unstall * jnp.sin(alphaabs) + C_T_unstall* jnp.cos(alphaabs)         # Drag Coefficient
     C_M_unstall = -C_N_unstall*(0.25-0.175*(1-2*alphaabs/jnp.pi))                          # Moment Coefficient
     
     # Coefficients in stall region based on flat plate model

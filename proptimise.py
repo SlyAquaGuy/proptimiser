@@ -7,5 +7,6 @@ from jax import random
 from typing import Callable
 # Internal Libraries
 from airfoil import parametric_coeffs
-from solvers import NewtonSolver
+from solvers import NewtonSolve
+
 ### Propeller Optimization Framework

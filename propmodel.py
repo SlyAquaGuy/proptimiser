@@ -6,43 +6,38 @@ import jax.numpy as jnp
 from jax import jit, vmap, grad, lax
 
 import optax
-
 import jaxopt
 
 import numpy as np
-from scipy.interpolate import griddata
-
 import matplotlib.pyplot as plt
-
 from dataclasses import replace
 
 # Internal Libraries
 from init import Inputs, Params
 from airfoil import aero_coeffs
 from airflow import tip_root_loss_factors, inflow_model
-#from solvers import NewtonSolver
 
 
 ### Integrand Functions
-def radial_stops(R, r_hub, n):
+def radial_stops(R, r_hub, n_r):
     # Return radial node centers and dr for integration
-    r = jnp.linspace(r_hub + (R - r_hub) / (2 * n), R - (R - r_hub) / (2 * n), n)
+    r = jnp.linspace(r_hub + (R - r_hub) / (2 * n_r), R - (R - r_hub) / (2 * n_r), n_r)
     # Simple Homogeneous radial spacing
-    dr = jnp.ones_like(r)*(R - r_hub) / n
+    dr = jnp.ones_like(r)*(R - r_hub) / n_r
     return r, dr
 
 def angular_stops(n_psi):
     # Return angular node centers and dpsi for integration
-    psi = jnp.linspace((jnp.pi / n_psi), (2 * jnp.pi) - (jnp.pi / n_psi), n_psi)
+    psi = jnp.linspace(0, (2 * jnp.pi), n_psi)
     dpsi = jnp.ones_like(psi)*(2 * jnp.pi) / n_psi
     return psi, dpsi
 
 def thrust_residual(V_ia_0, tr_params):
     """
-    Calculate thrust residual for an annular element at radius r.
+    Calculate thrust residual at annular and radial stops.
     """
     # Unpack parameters
-    N, c, r, psi, dpsi = tr_params.N, tr_params.c[:,None], tr_params.r[:,None], tr_params.psi[None,:], tr_params.dpsi[None,:]
+    N, c, r, psi, dpsi = tr_params.N, tr_params.c, tr_params.r, tr_params.psi, tr_params.dpsi
     V_x, V_yz, omega = tr_params.V_x, tr_params.V_yz, tr_params.omega
     rho = tr_params.rho
 
@@ -65,27 +60,33 @@ def thrust_residual(V_ia_0, tr_params):
         * c * V_rel ** 2 
         * (C_L * jnp.cos(phi) + C_D * jnp.sin(phi))
         # tip and root loss factors
-        * tip_loss[:,None] * root_loss[:,None]
+        * tip_loss * root_loss
         )
     # integrate thrust residuals about annulus
     res = jnp.trapezoid((dT_momentum - dT_blade), psi, axis=1)[:,None]
-
-    
     return res
 
 def induced_velocity(params):
+    '''
+    Output Induced Velocity from Input Parameters
+
+    Unpack the Induced Velocity, compute thrust residual and then converge using newton's method.
+    '''
+
+    # Unpack initial guess for induced velocity distribution
     V_ia_init = params.V_ia_0   # shape (Nr, 1)
 
     # Debug Check Initial Residuals
-    res_check = thrust_residual(V_ia_init, params)
-    print(res_check)
+    if Inputs.verbose:
+        res_check = thrust_residual(V_ia_init, params)
+        print(res_check)
 
-    print("residual shape", jnp.shape(res_check))
-    print("Residual min/max:", res_check.min(), res_check.max())
+        print("Residual Shape", jnp.shape(res_check))
+        print("Residual min/max:", res_check.min(), res_check.max())
 
     # Newton Solver for Induced Velocity
     solver = jaxopt.Broyden(fun=thrust_residual, maxiter=100, tol=Inputs.newton_eps, max_stepsize=0.8, implicit_diff=True)
-
+    # Input initial guess for induced velocity and solve.
     (V_ia_0, info) = solver.run(V_ia_init, params)
 
     # Debug Check Final Residuals
@@ -95,6 +96,48 @@ def induced_velocity(params):
     V_ia = inflow_model(V_ia_0, params)
 
     return V_ia
+
+def torque(V_ia, params):
+    # Calculate Total Torque From Induced Velocity
+    #Q = 
+    return 
+
+def thrust(V_ia, params):
+    '''
+    Calculate total thrust from solved induced velocity
+    '''
+    # Unpack Params
+    N, omega, V_yz, V_x, rho = params.N, params.omega, params.V_yz, params.V_x, params.rho
+    # Domain
+    r, psi = params.r, params.psi
+    # Variables
+    c = params.c
+
+    # Determine Local Flow Properties
+    V_yz_perp = V_yz * jnp.sin(psi)   
+    V_rel = jnp.sqrt((V_x + V_ia) ** 2 + (omega * r + V_yz_perp) ** 2)  # relative velocity
+    phi = jnp.arctan((V_x + V_ia)/(omega * r + V_yz_perp))    
+
+    # Calc Aero Coefficients
+    C_L, C_D, C_M = aero_coeffs(V_ia, params)
+
+    # Calc Tip and Root Loss Factors
+    tip_loss, root_loss = tip_root_loss_factors(params)
+
+    # Thrust Integrand using Blade Elements
+    dT_blade =( 
+        (N / (4 * jnp.pi)) * rho 
+        * c * V_rel ** 2 
+        * (C_L * jnp.cos(phi) + C_D * jnp.sin(phi))
+        # tip and root loss factors
+        * tip_loss * root_loss
+        )
+    
+    print(jnp.shape(dT_blade))
+    # Numerically Compute Double Integral to Solve for Thrust
+    T = jnp.trapezoid(jnp.trapezoid(dT_blade, r, axis=0), psi)
+
+    return T
 
 if __name__ == "__main__":
     ## Demo Cases of BEMT
@@ -135,7 +178,6 @@ if __name__ == "__main__":
         # Solve
         V_ia = induced_velocity(params)
 
-
         # Plot Induced Velocity Distribution about singular annulus
         plt.plot(jnp.degrees(params.psi), V_ia[1])
         plt.title("Induced Velocity Distribution around Propeller Annulus")
@@ -144,39 +186,44 @@ if __name__ == "__main__":
         plt.show()
 
     elif demo_solve == "flat":
+        # Debug NAN's and enable 64 bit precision
         jax.config.update("jax_enable_x64", True)
         jax.config.update("jax_debug_nans", True)
-        psi,dpsi = angular_stops(Inputs.n_psi)
+        # Populate radial/azimuthal stops and initial guess
+        psi, dpsi = angular_stops(Inputs.n_psi)
         r,dr = radial_stops(0.5, 0.05, Inputs.n_r)
-        V_ia_0 = jnp.full_like(r,jnp.array([10.0]))[:,None]
+        V_ia_0 = jnp.full_like(r,jnp.array([10.0]))
 
         #Update Parameters Class
         params = Params(
+            # When updating 
                     N = 2,
                     R = jnp.array([0.5]),
-                    c = jnp.full_like(r, 0.01),
-                    beta = jnp.full_like(r, jnp.radians(20)),
+                    c = jnp.full_like(r, 0.01)[:,None],
+                    beta = jnp.full_like(r, jnp.radians(20))[:,None],
 
-                    r = r,
+                    r = r[:,None],
                     dr = dr,
 
-                    psi = psi,
+                    psi = psi[None,:],
                     dpsi = dpsi,
 
                     V_x = jnp.array([10.0]),
                     V_yz = jnp.array([2.0]),
                     omega = jnp.array([400]),
 
-                    V_ia_0 = V_ia_0
+                    V_ia_0 = V_ia_0[:,None]
                 )
         # Register dataclass as a PyTree
         jax.tree_util.register_dataclass(Params)
         
         # Solve Induced Velocity
         V_ia = induced_velocity(params)  # shape (Nr, Npsi)
+
+        # Calculate total thrust
+        T = thrust(V_ia, params)
         
-        # Create radial and azimuthal grids
-        #r, theta = np.meshgrid(np.array(params.r), np.array(params.psi)), 
+        print("Total Thrust:", T)
 
         # Plot heatmap
         fig, ax = plt.subplots(subplot_kw={"projection": "polar"})
@@ -186,3 +233,5 @@ if __name__ == "__main__":
         plt.ylabel('Y [m]')
         plt.title('Induced Velocity over Propeller Disk')
         plt.show()
+
+

@@ -35,6 +35,11 @@ class Inputs:
 
 @dataclass(frozen=True)
 class Params:
+    '''
+    Parameters for a given blade solution.
+    Ensure that all inputs have specified shape upon assignment ([None,:] for azimuthal stops, [:,None] for radial stops)
+
+    '''
     # Domain of Integration
     r: jnp.ndarray          # radial stations
     dr: jnp.ndarray         # radial spacing
