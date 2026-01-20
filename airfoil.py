@@ -3,6 +3,7 @@ import jax
 from jax import numpy as jnp
 from jax import lax
 import matplotlib.pyplot as plt
+from init import Inputs
 from airflow import calc_phi
 
 ## ---Parametric Coefficients---
@@ -66,7 +67,7 @@ def lookup_coeffs(V_ia, params):
 
 def aero_coeffs(V_ia, params):
     # Select Method to Establish Aerodynamic Coefficients
-    C_L, C_D, C_M = lax.switch(params.coeff_method,
+    C_L, C_D, C_M = lax.switch(Inputs.coeff_method,
                     [parametric_coeffs, lookup_coeffs],
                     V_ia, params)
     return C_L, C_D, C_M

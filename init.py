@@ -1,9 +1,10 @@
 from dataclasses import dataclass
+from flax import struct
 import jax
 import jax.numpy as jnp
 
 # Freeze configuration parameters at runtime
-@dataclass(frozen=True)
+@struct.dataclass
 class Inputs:
     # Optimisation / design settings which remain constant during execution
 
@@ -17,6 +18,7 @@ class Inputs:
     newton_damping: float = 0.1
 
     # Thrust constraint
+    solvertype: str = "T"
     thrust: float = 10.0 # Newtons
 
     ## Discretisation settings
@@ -30,10 +32,16 @@ class Inputs:
     use_prandtl_root_loss: bool = False
 
     # Diagnostics / debugging
-    verbose: bool = True
+    verbose: bool = False
     record_convergence_history: bool = False
 
-@dataclass(frozen=True)
+    # Model Selection
+    inflow_model: int = 1   # 0 = basic, 1 = Pitt & Peters, 2 = DTU
+    coeff_method: int = 0 # 0 = parametric, 1 = lookup table
+    tip_loss_model: int = 0 # 0 = none, 1 = Prandtl
+    root_loss_model: int = 0 # 0 = none, 1 = Prandtl
+
+@struct.dataclass
 class Params:
     '''
     Parameters for a given blade solution.
@@ -61,13 +69,35 @@ class Params:
 
     V_ia_0: jnp.ndarray     # initial guess/storage for V_ia_0
 
-
     # Physical properties
     rho: float = 1.225      # air density
 
-    # Model Selection
-    inflow_model: int = 1 # 0 = basic, 1 = Pitt & Peters, 2 = DTU
-    coeff_method: int = 0 # 0 = parametric, 1 = lookup table
-    tip_loss_model: int = 0 # 0 = none, 1 = Prandtl
-    root_loss_model: int = 0 # 0 = none, 1 = Prandtl
+def blade_design_mask(params: Params):
+    """
+    Mask specifying which Params fields are optimized.
+    True  -> optimized
+    False -> frozen
+    """
+    return Params(
+        # Domain of integration
+        r=False,
+        dr=False,
+        psi=False,
+        dpsi=False,
+
+        # Geometry & discretization (DESIGN VARIABLES)
+        N=False,
+        R=False,
+        c=True,
+        beta=True,
+        # Inflow / rotor state
+        V_x=False,
+        V_yz=False,
+        omega=False,
+        V_ia_0=False,
+
+        # Physical properties
+        rho=False
+    )
+
 

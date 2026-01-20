@@ -32,40 +32,74 @@ def angular_stops(n_psi):
     dpsi = jnp.ones_like(psi)*(2 * jnp.pi) / n_psi
     return psi, dpsi
 
-def thrust_residual(V_ia_0, tr_params):
+
+### Thrust Calculations
+def dT_blade(V_ia, params):
     """
-    Calculate thrust residual at annular and radial stops.
+    Calculate thrust integrand using blade element theory at radial and azimuthal stops
     """
     # Unpack parameters
-    N, c, r, psi, dpsi = tr_params.N, tr_params.c, tr_params.r, tr_params.psi, tr_params.dpsi
-    V_x, V_yz, omega = tr_params.V_x, tr_params.V_yz, tr_params.omega
-    rho = tr_params.rho
+    N, c, r, psi = params.N, params.c, params.r, params.psi
+    V_x, V_yz, omega = params.V_x, params.V_yz, params.omega
+    rho = params.rho
 
     # Calculate Local Flow Properties
     V_yz_perp = V_yz * jnp.sin(psi)                                     # Perpendicular component of velocity in yz plane
-    V_ia = inflow_model(V_ia_0, tr_params)                              # Calculate Inflow Velocity using selected mode
     phi = jnp.arctan((V_x + V_ia)/(omega * r + V_yz_perp))              # Angle of attack
     V_rel = jnp.sqrt((V_x + V_ia) ** 2 + (omega * r + V_yz_perp) ** 2)  # relative velocity
     # Get Aerodynamic Coefficients
-    C_L, C_D, C_M = aero_coeffs(V_ia, tr_params)
+    C_L, C_D, C_M = aero_coeffs(V_ia, params)
 
     # Tip and Root Loss Factors
-    tip_loss, root_loss = tip_root_loss_factors(tr_params)
+    tip_loss, root_loss = tip_root_loss_factors(params)
 
-    # Momentum Theory about annular element 
-    dT_momentum = (2 * rho * r * V_ia * jnp.sqrt((V_x + V_ia) ** 2 + V_yz ** 2))  
     # Blade Element Theory about annular element
     dT_blade =( 
         (N / (4 * jnp.pi)) * rho 
         * c * V_rel ** 2 
-        * (C_L * jnp.cos(phi) + C_D * jnp.sin(phi))
+        * (C_L * jnp.cos(phi) - C_D * jnp.sin(phi))
         # tip and root loss factors
         * tip_loss * root_loss
         )
-    # integrate thrust residuals about annulus
-    res = jnp.trapezoid((dT_momentum - dT_blade), psi, axis=1)[:,None]
-    return res
+    return dT_blade
 
+def dT_momentum(V_ia, params):
+    """
+    Calculate thrust integrand using momentum theory at radial and azimuthal stops
+
+    Outputs: dT_momentum (Nr, Npsi)
+    """
+    # Unpack parameters
+    r = params.r
+    V_x, V_yz = params.V_x, params.V_yz
+    rho = params.rho
+
+    # Momentum theory about annular element 
+    dT_momentum = (2 * rho * r * V_ia * jnp.sqrt((V_x + V_ia) ** 2 + V_yz ** 2))  
+
+    return dT_momentum
+
+def thrust_residual(V_ia_0, params):
+    """
+    Calculate thrust residual at radial stops
+
+
+    (may extrapolate to radial+azimuthal stops later, 
+    but for now skew rotor inflow is most complex and 
+    dimensions of problem is reduced)
+    """
+    # Unpack Parameters
+    psi = params.psi
+
+    # Establish induced velocity from inflow model
+    V_ia = inflow_model(V_ia_0, params)
+
+    # Establish thrust residual and integrate about annulus
+    dT_residual = dT_blade(V_ia, params)-dT_momentum(V_ia, params)
+    T_residual = jnp.trapezoid(dT_residual, psi, axis=1)
+    return T_residual[:,None]
+
+### Outputs
 def induced_velocity(params):
     '''
     Output Induced Velocity from Input Parameters
@@ -86,58 +120,94 @@ def induced_velocity(params):
 
     # Newton Solver for Induced Velocity
     solver = jaxopt.Broyden(fun=thrust_residual, maxiter=100, tol=Inputs.newton_eps, max_stepsize=0.8, implicit_diff=True)
-    # Input initial guess for induced velocity and solve.
+    # Input initial guess for induced velocity and solve. (Induced velocity is parametrised per radial stop)
     (V_ia_0, info) = solver.run(V_ia_init, params)
 
     # Debug Check Final Residuals
     if Inputs.verbose:
         res_check = thrust_residual(V_ia_0, params)
-        print("Residuals Check", res_check)
-    V_ia = inflow_model(V_ia_0, params)
+        print("Residuals Check:", res_check)
 
+    V_ia = inflow_model(V_ia_0, params)
     return V_ia
 
 def torque(V_ia, params):
-    # Calculate Total Torque From Induced Velocity
-    #Q = 
-    return 
+    """
+    Calculate Torque of Propeller
+    """
+    # Unpack parameters
+    N, c, r, psi = params.N, params.c, params.r, params.psi
+    V_x, V_yz, omega = params.V_x, params.V_yz, params.omega
+    rho = params.rho
 
-def thrust(V_ia, params):
-    '''
-    Calculate total thrust from solved induced velocity
-    '''
-    # Unpack Params
-    N, omega, V_yz, V_x, rho = params.N, params.omega, params.V_yz, params.V_x, params.rho
-    # Domain
-    r, psi = params.r, params.psi
-    # Variables
-    c = params.c
-
-    # Determine Local Flow Properties
-    V_yz_perp = V_yz * jnp.sin(psi)   
-    V_rel = jnp.sqrt((V_x + V_ia) ** 2 + (omega * r + V_yz_perp) ** 2)  # relative velocity
-    phi = jnp.arctan((V_x + V_ia)/(omega * r + V_yz_perp))    
-
-    # Calc Aero Coefficients
+    # Calculate Local Flow Properties
+    V_yz_perp = V_yz * jnp.sin(psi)                                     # Perpendicular component of velocity in yz plane
+    phi = jnp.arctan((V_x + V_ia)/(omega * r + V_yz_perp))              # Angle of attack
+    V_rel = jnp.sqrt((V_x + V_ia) ** 2 + (omega * r + V_yz_perp) ** 2)  # Relative velocity
+    # Get Aerodynamic Coefficients
     C_L, C_D, C_M = aero_coeffs(V_ia, params)
 
-    # Calc Tip and Root Loss Factors
+    # Tip and Root Loss Factors
     tip_loss, root_loss = tip_root_loss_factors(params)
 
-    # Thrust Integrand using Blade Elements
-    dT_blade =( 
+    # Blade Element Theory about annular element
+    dQ_blade =( 
         (N / (4 * jnp.pi)) * rho 
         * c * V_rel ** 2 
         * (C_L * jnp.cos(phi) + C_D * jnp.sin(phi))
         # tip and root loss factors
         * tip_loss * root_loss
         )
-    
-    print(jnp.shape(dT_blade))
-    # Numerically Compute Double Integral to Solve for Thrust
-    T = jnp.trapezoid(jnp.trapezoid(dT_blade, r, axis=0), psi)
 
+    Q = jnp.trapezoid(jnp.trapezoid(dQ_blade, psi, axis=1)*r, r)
+    return Q
+
+def thrust(V_ia, params):
+    '''
+    Calculate total thrust from solved induced velocity
+    '''
+
+    r, psi = params.r, params.psi
+    dT = dT_momentum(V_ia,params)
+
+    # Numerically Compute Double Integral to Solve for Thrust
+    T = jnp.trapezoid(jnp.trapezoid(dT, r, axis=0), psi)
     return T
+
+def power(V_ia, params):
+    '''
+    Calculate power of propeller using blade element theory
+    '''
+    if Inputs.solvertype == "Q":
+        omega = params.omega
+        Q = torque(V_ia, params)
+        P = omega*Q
+    elif Inputs.solvertype == "T":
+        # Unpack Params
+        r, psi = params.r, params.psi
+        # Calculate Local Axial Flow Velocity
+        V_x = params.V_x
+        V = V_ia+V_x 
+
+        # Elemental Thrust
+        dT = dT_momentum(V_ia,params)
+
+        dP = dT*V
+
+        P = jnp.trapezoid(jnp.trapezoid(dP,r,axis=0),psi)
+    return P
+
+def actuator_disk_power(V_ia, power):
+    '''
+    Calculate ideal actuator disk power for same thrust
+    '''
+    T = thrust(V_ia,params)
+    V_x = params.V_x
+
+    V_ind_mean = jnp.mean(V_ia)
+
+    return P_actuator
+
 
 if __name__ == "__main__":
     ## Demo Cases of BEMT
@@ -173,7 +243,6 @@ if __name__ == "__main__":
                 )
         # Register dataclass as a PyTree
         jax.tree_util.register_dataclass(Params)
-        print()
 
         # Solve
         V_ia = induced_velocity(params)
@@ -186,12 +255,13 @@ if __name__ == "__main__":
         plt.show()
 
     elif demo_solve == "flat":
+        # Flat Blade Demo Model
         # Debug NAN's and enable 64 bit precision
         jax.config.update("jax_enable_x64", True)
         jax.config.update("jax_debug_nans", True)
         # Populate radial/azimuthal stops and initial guess
         psi, dpsi = angular_stops(Inputs.n_psi)
-        r,dr = radial_stops(0.5, 0.05, Inputs.n_r)
+        r, dr = radial_stops(0.5, 0.05, Inputs.n_r)
         V_ia_0 = jnp.full_like(r,jnp.array([10.0]))
 
         #Update Parameters Class

@@ -53,7 +53,7 @@ def dtu_model(V_ia_0, params):
 
 def inflow_model(V_ia_0, params):
     # Calculate inflow velocity based on selected model
-    return lax.switch(params.inflow_model,
+    return lax.switch(Inputs.inflow_model,
                     [simple, pitt_peters, dtu_model],
                     V_ia_0, params
                     )
@@ -77,11 +77,11 @@ def prandtl_root_loss(params):
 
 def tip_root_loss_factors(params):
     # Calculate tip and root loss factors based on selected models
-    tip_loss = lax.switch(params.tip_loss_model,
+    tip_loss = lax.switch(Inputs.tip_loss_model,
                       [no_loss, prandtl_tip_loss],
                       params)
     
-    root_loss = lax.switch(params.root_loss_model,
+    root_loss = lax.switch(Inputs.root_loss_model,
                       [no_loss, prandtl_root_loss],
                         params)
 
