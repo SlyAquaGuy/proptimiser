@@ -1,137 +1,133 @@
 import jax
 import jax.numpy as jnp
-import optax
-import functools
+import jaxopt
 import matplotlib.pyplot as plt
 
-# Internal Libraries
 from init import Params, Inputs
 import propmodel
 
+def curvature_penalty(x):
+    '''
+    Discrete Second-Derivative Penalty (Approximation)
+    '''
+    d2 = x[2:]-2.0*x[1:-1]+x[:-2]
+
+    return jnp.sum(d2**2)
+
+
 def run_optimization():
+    # 64 Bit Precision, otherwise thrust residuals don't converge
     jax.config.update("jax_enable_x64", True)
 
-    # --- 1. Setup Base Geometry ---
+    # --- 1. Setup ---
     psi, dpsi = propmodel.angular_stops(Inputs.n_psi)
     r, dr = propmodel.radial_stops(0.5, 0.05, Inputs.n_r)
     V_ia_0 = jnp.full_like(r, 10.0)
 
-    params_base = Params(
+    # Initial Guesses
+    init_c = jnp.full((len(r), 1), 0.01)
+    init_beta = jnp.full((len(r), 1), jnp.radians(10.0))
+    init_vars = (init_c, init_beta)
+
+    # Initial static parameters
+    params_static = Params(
         N=2.0, R=jnp.array([0.15]),
-        c=jnp.full_like(r, 0.01)[:, None],
-        beta=jnp.full_like(r, jnp.radians(20.0))[:, None],
+        c=init_c,
+        beta=init_beta,
         r=r[:, None], dr=dr,
         psi=psi[None, :], dpsi=dpsi,
         V_x=jnp.array([10.0]), V_yz=jnp.array([2.0]),
-        omega=jnp.array([6000.0]),
+        omega=jnp.array([400.0]),
         V_ia_0=V_ia_0[:, None]
     )
 
-    # Helper: Convert optimizer's raw values to physical parameters (c > 0)
-    def get_physical_params(opt_params, static_params: Params):
-        # softplus ensures chord is always positive: c = log(1 + exp(c_raw))
-        return static_params.replace(
-            c=jax.nn.softplus(opt_params["c_raw"]),
-            beta=opt_params["beta"]
+    # --- 2. Define Bounds ---
+    # Chord: 1mm to 50mm | Beta: 2 deg to 70 deg
+    lower_bounds = (jnp.full_like(init_c, 0.001), jnp.full_like(init_beta, jnp.radians(2.0)))
+    upper_bounds = (jnp.full_like(init_c, 0.050), jnp.full_like(init_beta, jnp.radians(70.0)))
+
+    # --- 3. Objective Function (with Penalty) ---
+    def objective_fn(opt_vars, lmbda, mu):
+        c, beta = opt_vars
+        if Inputs.verbose:
+            jax.debug.print("Current Mean Chord: {x}", x=jnp.mean(c))
+        
+        # Build the param object for the model
+        params = params_static.replace(c=c, beta=beta)
+        
+        # Solve for induced velocity
+        V_ia = propmodel.induced_velocity(params)
+        
+        # Calculate performance
+        power = jnp.squeeze(propmodel.power(V_ia, params))
+        thrust = jnp.squeeze(propmodel.thrust(V_ia, params))
+        
+        # Penalty Function for Thrust
+        thrust_err = thrust - Inputs.thrust
+
+        # Smoothness/Continuity Penalty 
+        smooth_beta = curvature_penalty(beta)
+        smooth_chord = curvature_penalty(c)
+
+        smooth_penalty = (
+            Inputs.lambda_beta_smooth*smooth_beta+
+            Inputs.lambda_chord_smooth*smooth_chord
         )
-
-    # Initial Guess for Optimizer
-    # We use inverse softplus so that the initial physical chord is 0.01m
-    def inv_softplus(y): return jnp.log(jnp.exp(y) - 1.0)
-    init_opt_params = {
-        "c_raw": inv_softplus(params_base.c),
-        "beta": params_base.beta
-    }
-
-    # --- 2. Define the Augmented Lagrangian Function ---
-    def lagrangian_fn(opt_params, static_params, lmbda, mu):
-        p = get_physical_params(opt_params, static_params)
-        V_ia = propmodel.induced_velocity(p)
         
-        # Objective: Minimize Power
-        power = jnp.squeeze(propmodel.power(V_ia, p))
-        
-        # Constraint: Thrust - Target = 0
-        thrust_error = jnp.squeeze(propmodel.thrust(V_ia, p) - Inputs.thrust)
-        
-        # ALM Formula: Objective + (Multiplier * Error) + (Penalty/2 * Error^2)
-        return power + lmbda * thrust_error + 0.5 * mu * (thrust_error**2)
+        # Augmented Lagrangian: Obj + (L * err) + (mu/2 * err^2)
+        # Using a heavy penalty (mu) ensures the thrust constraint is met
+        return power + lmbda * thrust_err + 0.5 * mu * (thrust_err**2) + smooth_penalty
 
-    # --- 3. Optimizer Setup ---
-    optimiser = optax.lbfgs(
-        learning_rate=None, # LBFGS uses linesearch
-        memory_size=10,
-        linesearch=optax.scale_by_zoom_linesearch(max_linesearch_steps=20)
-    )
-
-    @jax.jit
-    def inner_step(params, state, lmbda, mu):
-        # Partial function for the linesearch to see the current lambda/mu
-        v_fn = lambda p: lagrangian_fn(p, params_base, lmbda, mu)
-        
-        loss_val, grads = jax.value_and_grad(lagrangian_fn)(params, params_base, lmbda, mu)
-        
-        updates, next_state = optimiser.update(
-            grads, state, params, 
-            value=loss_val, grad=grads, value_fn=v_fn
-        )
-        next_params = optax.apply_updates(params, updates)
-
-        gnorm = optax.global_norm(grads)
-
-        return next_params, next_state, loss_val, gnorm
-
-    # --- 4. Outer Loop (Augmented Lagrangian Iterations) ---
-    opt_params = init_opt_params
-    opt_state = optimiser.init(opt_params)
+    # --- 4. Optimization Loop ---
+    # (L-BFGS-B) for outer loop optimisation allows implementing constraints, 
+    solver = jaxopt.ScipyBoundedMinimize(fun=objective_fn, method="L-BFGS-B", tol=Inputs.opt_tol)
     
-    # ALM multipliers
-    lmbda = 0.0   # The "Force" pushing the constraint to zero
-    mu = 10.0     # The "Stiffness" of the penalty
+    '''
+    Janky initial solver loop just to get a propeller converging.
+    '''
     
-    print(f"{'Iter':<6} | {'Loss':<10} | {'Thrust Err':<12} | {'Lambda':<10}")
-    print("-" * 50)
+    curr_vars = init_vars
+    lmbda = 0.0
+    mu = 10.0 # Initial stiffness for thrust
 
-    for outer_i in range(20):
-        # Solve the Lagrangian for the current multipliers
-        for inner_i in range(Inputs.opt_max_iter):
-            opt_params, opt_state, loss, gnorm = inner_step(opt_params, opt_state, lmbda, mu)
-            if jnp.abs(gnorm) < 1e-5:
-                print("Inner Iterations Satisfied")
-                break
+    print(f"{'Iter':<6} | {'Total Loss':<12} | {'Thrust Err':<12} | {'Mu':<10}")
+    print("-" * 55)
+
+    for i in range(50):
+        # Solve the sub-problem
+        sol = solver.run(curr_vars, bounds=(lower_bounds, upper_bounds), lmbda=lmbda, mu=mu)
+        curr_vars = sol.params
         
-        # Calculate current physical violation
-        phys = get_physical_params(opt_params, params_base)
-        V_ia = propmodel.induced_velocity(phys)
-        thrust_err = jnp.squeeze(propmodel.thrust(V_ia, phys) - Inputs.thrust)
+        # Check physical error
+        c_final, beta_final = curr_vars
+        params_final = params_static.replace(c=c_final, beta=beta_final)
+        V_ia_final = propmodel.induced_velocity(params_final)
+        t_final = jnp.squeeze(propmodel.thrust(V_ia_final, params_final))
+        thrust_err = t_final - Inputs.thrust
+        
+        print(f"{i:<6} | {sol.state.fun_val:<12.4f} | {thrust_err:<12.4e} | {mu:<10.1f}")
 
-        # Update Rule: Shift the "target" based on the error
+        # Update Multipliers
         lmbda += mu * thrust_err
+        mu *= 2.0  # Aggressively increase penalty stiffness
         
-        # Increase penalty (mu) to sharpen the constraint
-        mu = min(mu * 1.5, 1e6) 
-
-        print(f"{outer_i:<6} | {loss:<10.4f} | {thrust_err:<12.4e} | {lmbda:<10.4f}")
-
-        if abs(thrust_err) < 1e-5:
-            print("\nConstraint Rigorously Satisfied.")
+        if abs(thrust_err) < 1e-4:
             break
 
-    
-
-    # --- 5. Final Results ---
-    final_params = get_physical_params(opt_params, params_base)
-    print(f"\nFinal Chord: {jnp.squeeze(final_params.c)} m")
-    print(f"\nFinal Beta: {jnp.squeeze(final_params.beta)} degree")
-    print(f"Final Power: {jnp.squeeze(propmodel.power(V_ia, final_params)):.4f} W")
-    print(f"Final Thrust: {jnp.squeeze(propmodel.thrust(V_ia, final_params)):4f} N")
-
-    plt.plot(jnp.squeeze(final_params.r), jnp.squeeze(final_params.c))
-    plt.xlabel("r")
-    plt.ylabel("chord")
-    plt.show()
-
-    return final_params
+    return params_final
 
 if __name__ == "__main__":
-    run_optimization()
+    params_opt = run_optimization()
+
+    # Unpack Parameters
+    r = params_opt.r
+    c, beta = params_opt.c, params_opt.beta
+    # --- 5. Visualization ---
+    plt.figure(figsize=(10, 4))
+    plt.subplot(1, 2, 1)
+    plt.plot(r, c)
+    plt.title("Optimized Chord (m)")
+    plt.subplot(1, 2, 2)
+    plt.plot(r, jnp.degrees(beta))
+    plt.title("Optimized Beta (deg)")
+    plt.show()

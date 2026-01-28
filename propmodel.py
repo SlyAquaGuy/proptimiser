@@ -166,7 +166,6 @@ def thrust(V_ia, params):
     '''
     Calculate total thrust from solved induced velocity
     '''
-
     r, psi = params.r, params.psi
     dT = dT_momentum(V_ia,params)
 
@@ -178,23 +177,19 @@ def power(V_ia, params):
     '''
     Calculate power of propeller using blade element theory
     '''
-    if Inputs.solvertype == "Q":
-        omega = params.omega
-        Q = torque(V_ia, params)
-        P = omega*Q
-    elif Inputs.solvertype == "T":
-        # Unpack Params
-        r, psi = params.r, params.psi
-        # Calculate Local Axial Flow Velocity
-        V_x = params.V_x
-        V = V_ia+V_x 
 
-        # Elemental Thrust
-        dT = dT_momentum(V_ia,params)
+    # Unpack Params
+    r, psi = params.r, params.psi
+    # Calculate Local Axial Flow Velocity
+    V_x = params.V_x
+    V = V_ia+V_x 
 
-        dP = dT*V
+    # Elemental Thrust
+    dT = dT_momentum(V_ia, params)
 
-        P = jnp.trapezoid(jnp.trapezoid(dP,r,axis=0),psi)
+    dP = dT*V
+
+    P = jnp.trapezoid(jnp.trapezoid(dP,r,axis=0),psi)
     return P
 
 def actuator_disk_power(V_ia, power):

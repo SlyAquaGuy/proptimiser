@@ -10,7 +10,7 @@ class Inputs:
 
     # Outer-loop optimisation (Optax / similar)
     opt_max_iter: int = 200
-    opt_tol: float = 1e-4
+    opt_tol: float = 1e-3
 
     # Newton solver settings
     newton_max_iter: int = 100
@@ -19,7 +19,16 @@ class Inputs:
 
     # Thrust constraint
     solvertype: str = "T"
-    thrust: float = 10.0 # Newtons
+    thrust: float = 100.0 # Newtons
+
+    # Normalisation for Power (update with flat-plate guess)
+    power_scale: float = 1000
+
+    # Smoothness Constraints
+    lambda_beta_smooth: float = 1e-4*power_scale
+    lambda_chord_smooth: float = 1e-4*power_scale
+
+
 
     ## Discretisation settings
     # Radial discretisation
