@@ -1,11 +1,9 @@
 from dataclasses import dataclass
-from flax import struct
-import jax
+import equinox as eqx
 import jax.numpy as jnp
 
 # Freeze configuration parameters at runtime
-@struct.dataclass
-class Inputs:
+class Inputs(eqx.Module):
     # Optimisation / design settings which remain constant during execution
 
     # Outer-loop optimisation (Optax / similar)
@@ -50,8 +48,7 @@ class Inputs:
     tip_loss_model: int = 0 # 0 = none, 1 = Prandtl
     root_loss_model: int = 0 # 0 = none, 1 = Prandtl
 
-@struct.dataclass
-class Params:
+class Params(eqx.Module):
     '''
     Parameters for a given blade solution.
     Ensure that all inputs have specified shape upon assignment ([None,:] for azimuthal stops, [:,None] for radial stops)
