@@ -229,7 +229,7 @@ def flatblade(R, c, beta, N, plot=False):
                 dpsi = dpsi,
 
                 V_x = jnp.array([10.0]),
-                V_yz = jnp.array([2.0]),
+                V_yz = jnp.array([10.0]),
                 omega = jnp.array([400]),
 
                 V_ia_0 = V_ia_0[:,None]
