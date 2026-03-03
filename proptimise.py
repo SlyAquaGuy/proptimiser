@@ -18,7 +18,6 @@ def curvature_penalty(x):
 def run_optimization():
     # 64 Bit Precision, otherwise thrust residuals don't converge
     jax.config.update("jax_enable_x64", True)
-
     # --- 1. Setup ---
     psi, dpsi = propmodel.angular_stops(Inputs.n_psi)
     r, dr = propmodel.radial_stops(0.5, 0.05, Inputs.n_r)

@@ -171,7 +171,7 @@ def thrust(V_ia, params):
 
     # Numerically Compute Double Integral to Solve for Thrust
     T = jnp.trapezoid(jnp.trapezoid(dT, r, axis=0), psi)
-    return T
+    return T.item()
 
 def power(V_ia, params):
     '''
@@ -203,6 +203,58 @@ def actuator_disk_power(V_ia, power):
 
     return P_actuator
 
+def flatblade(R, c, beta, N, plot=False):
+    # Flat Blade Demo Model
+    # Debug NAN's and enable 64 bit precision
+    jax.config.update("jax_enable_x64", True)
+    jax.config.update("jax_debug_nans", True)
+    # Populate radial/azimuthal stops and initial guess
+    psi, dpsi = angular_stops(Inputs.n_psi)
+    r, dr = radial_stops(R, 0.05, Inputs.n_r)
+    V_ia_0 = jnp.full_like(r,jnp.array([10.0]))
+
+    # Update Parameters datalass
+    global params
+
+    params = Params(
+                N = N,
+                R = jnp.array([R]),
+                c = jnp.array(c)[:,None],
+                beta = jnp.radians(beta)[:,None],
+
+                r = r[:,None],
+                dr = dr,
+
+                psi = psi[None,:],
+                dpsi = dpsi,
+
+                V_x = jnp.array([10.0]),
+                V_yz = jnp.array([2.0]),
+                omega = jnp.array([400]),
+
+                V_ia_0 = V_ia_0[:,None]
+            )
+    # Register dataclass as a PyTree
+    #jax.tree_util.register_dataclass(Params)
+    
+    # Solve Induced Velocity
+    V_ia = induced_velocity(params)  # shape (Nr, Npsi)
+
+    # Calculate total thrust
+    T = thrust(V_ia, params)
+    
+    print("Total Thrust:", T)
+    if plot==True:
+        # Plot heatmap
+        fig, ax = plt.subplots(subplot_kw={"projection": "polar"})
+        plt.contourf(psi, r, V_ia, shading='auto', cmap='viridis')
+        plt.colorbar(label='Induced Velocity [m/s]')
+        plt.xlabel('X [m]')
+        plt.ylabel('Y [m]')
+        plt.title('Induced Velocity over Propeller Disk')
+        plt.show()
+
+    return params, V_ia, T
 
 if __name__ == "__main__":
     ## Demo Cases of BEMT
@@ -237,7 +289,7 @@ if __name__ == "__main__":
                     V_ia_0 = jnp.array([20.0])[:,None]
                 )
         # Register dataclass as a PyTree
-        jax.tree_util.register_dataclass(Params)
+        #jax.tree_util.register_dataclass(Params)
 
         # Solve
         V_ia = induced_velocity(params)
@@ -250,53 +302,5 @@ if __name__ == "__main__":
         plt.show()
 
     elif demo_solve == "flat":
-        # Flat Blade Demo Model
-        # Debug NAN's and enable 64 bit precision
-        jax.config.update("jax_enable_x64", True)
-        jax.config.update("jax_debug_nans", True)
-        # Populate radial/azimuthal stops and initial guess
-        psi, dpsi = angular_stops(Inputs.n_psi)
-        r, dr = radial_stops(0.5, 0.05, Inputs.n_r)
-        V_ia_0 = jnp.full_like(r,jnp.array([10.0]))
-
-        #Update Parameters Class
-        params = Params(
-            # When updating 
-                    N = 2,
-                    R = jnp.array([0.5]),
-                    c = jnp.full_like(r, 0.01)[:,None],
-                    beta = jnp.full_like(r, jnp.radians(20))[:,None],
-
-                    r = r[:,None],
-                    dr = dr,
-
-                    psi = psi[None,:],
-                    dpsi = dpsi,
-
-                    V_x = jnp.array([10.0]),
-                    V_yz = jnp.array([2.0]),
-                    omega = jnp.array([400]),
-
-                    V_ia_0 = V_ia_0[:,None]
-                )
-        # Register dataclass as a PyTree
-        jax.tree_util.register_dataclass(Params)
-        
-        # Solve Induced Velocity
-        V_ia = induced_velocity(params)  # shape (Nr, Npsi)
-
-        # Calculate total thrust
-        T = thrust(V_ia, params)
-        
-        print("Total Thrust:", T)
-
-        # Plot heatmap
-        fig, ax = plt.subplots(subplot_kw={"projection": "polar"})
-        plt.contourf(psi, r, V_ia, shading='auto', cmap='viridis')
-        plt.colorbar(label='Induced Velocity [m/s]')
-        plt.xlabel('X [m]')
-        plt.ylabel('Y [m]')
-        plt.title('Induced Velocity over Propeller Disk')
-        plt.show()
-
+        flatblade()
 
