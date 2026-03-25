@@ -51,32 +51,33 @@ class Inputs(eqx.Module):
 class Params(eqx.Module):
     '''
     Parameters for a given blade solution.
-    Ensure that all inputs have specified shape upon assignment ([None,:] for azimuthal stops, [:,None] for radial stops)
+    Ensure that all inputs have specified shape upon assignment.
+    ([None,:] for azimuthal stops, [:,None] for radial stops)
 
     '''
     # Domain of Integration
     r: jnp.ndarray          # radial stations
-    dr: jnp.ndarray         # radial spacing
+    dr: jnp.ndarray         # radial spacing (m)
     psi: jnp.ndarray        # azimuthal stations
-    dpsi: jnp.ndarray       # azimuthal spacing
+    dpsi: jnp.ndarray       # azimuthal spacing (m)
 
 
     # Geometry & discretization
     N: jnp.ndarray          # number of blades
-    R: jnp.ndarray          # propeller radius
-    c: jnp.ndarray          # chord length at radial stations
-    beta: jnp.ndarray       # blade twist angle (radians)
+    R: jnp.ndarray          # propeller radius (m)
+    c: jnp.ndarray          # chord length at radial stations (m)
+    beta: jnp.ndarray       # blade twist angle (rad)
 
 
     # Inflow / rotor state
-    V_x: jnp.ndarray        # axial inflow velocity
-    V_yz: jnp.ndarray       # tangential / side inflow velocity
-    omega: jnp.ndarray      # rotational speed
+    V_x: jnp.ndarray        # axial inflow velocity (ms^{-1})
+    V_yz: jnp.ndarray       # tangential / side inflow velocity (ms^{-1})
+    omega: jnp.ndarray      # rotational speed (rad/s)
 
-    V_ia_0: jnp.ndarray     # initial guess/storage for V_ia_0
+    V_ia_0: jnp.ndarray     # initial guess/storage for V_ia_0 (ms^{-1})
 
     # Physical properties
-    rho: float = 1.225      # air density
+    rho: float = 1.225      # air density (kgm^{-3})
 
 def blade_design_mask(params: Params):
     """

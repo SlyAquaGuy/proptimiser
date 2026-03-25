@@ -20,14 +20,18 @@ from airflow import tip_root_loss_factors, inflow_model
 
 ### Integrand Functions
 def radial_stops(R, r_hub, n_r):
-    # Return radial node centers and dr for integration
+    '''
+    Return radial node centers and dr for integration.
+    '''
     r = jnp.linspace(r_hub + (R - r_hub) / (2 * n_r), R - (R - r_hub) / (2 * n_r), n_r)
     # Simple Homogeneous radial spacing
     dr = jnp.ones_like(r)*(R - r_hub) / n_r
     return r, dr
 
 def angular_stops(n_psi):
-    # Return angular node centers and dpsi for integration
+    '''
+    Return angular node centers and dpsi for integration
+    '''
     psi = jnp.linspace(0, (2 * jnp.pi), n_psi)
     dpsi = jnp.ones_like(psi)*(2 * jnp.pi) / n_psi
     return psi, dpsi
@@ -37,6 +41,10 @@ def angular_stops(n_psi):
 def dT_blade(V_ia, params):
     """
     Calculate thrust integrand using blade element theory at radial and azimuthal stops
+
+    Uses formulation from (M. Nahon et al., 2015)
+
+    Outputs: dT_blade (Nr, Npsi)
     """
     # Unpack parameters
     N, c, r, psi = params.N, params.c, params.r, params.psi
@@ -67,6 +75,8 @@ def dT_momentum(V_ia, params):
     """
     Calculate thrust integrand using momentum theory at radial and azimuthal stops
 
+    Uses formulation from (M. Nahon et al., 2015)
+
     Outputs: dT_momentum (Nr, Npsi)
     """
     # Unpack parameters
@@ -81,13 +91,14 @@ def dT_momentum(V_ia, params):
 
 def thrust_residual(V_ia_0, params):
     """
-    Calculate thrust residual at radial stops
+    Calculate thrust residual at radial stops (difference between blade+momentum theory)
 
 
     (may extrapolate to radial+azimuthal stops later, 
     but for now skew rotor inflow is most complex and 
-    dimensions of problem is reduced)
+    dimensionality of problem is reduced)
     """
+
     # Unpack Parameters
     psi = params.psi
 
@@ -104,7 +115,7 @@ def induced_velocity(params):
     '''
     Output Induced Velocity from Input Parameters
 
-    Unpack the Induced Velocity, compute thrust residual and then converge using newton's method.
+    Unpack the Induced Velocity, compute thrust residual and then converge using jaxopt.Broyden (L-BFGS-B)
     '''
 
     # Unpack initial guess for induced velocity distribution
@@ -131,10 +142,15 @@ def induced_velocity(params):
     V_ia = inflow_model(V_ia_0, params)
     return V_ia
 
-def torque(V_ia, params):
+def dQ_blade(V_ia,params):
+    '''
+    Calculate Torque Integrand using Blade Element Theory at radial and aizmuthal stops.
+
+    Uses formulation from (M. Nahon et al., 2015)
+
+    Outputs: dT_momentum (Nr, Npsi)
     """
-    Calculate Torque of Propeller
-    """
+    '''
     # Unpack parameters
     N, c, r, psi = params.N, params.c, params.r, params.psi
     V_x, V_yz, omega = params.V_x, params.V_yz, params.omega
@@ -158,6 +174,13 @@ def torque(V_ia, params):
         # tip and root loss factors
         * tip_loss * root_loss
         )
+    return dQ_blade
+
+def torque(V_ia, params):
+    """
+    Integrate to find Total Torque of Propeller
+    """
+    dQ_blade = dQ_blade(V_ia, params)
 
     Q = jnp.trapezoid(jnp.trapezoid(dQ_blade, psi, axis=1)*r, r)
     return Q
@@ -175,7 +198,7 @@ def thrust(V_ia, params):
 
 def power(V_ia, params):
     '''
-    Calculate power of propeller using blade element theory
+    Calculate Power of Propeller (W) using Momentum Theory
     '''
 
     # Unpack Params
@@ -194,9 +217,11 @@ def power(V_ia, params):
 
 def actuator_disk_power(V_ia, power):
     '''
-    Calculate ideal actuator disk power for same thrust
+    Calculate Ideal Actuator Disk Power for same thrust
+
+    UNFINISHED CODE
     '''
-    T = thrust(V_ia,params)
+    T = actuator_thrust(V_ia,params)
     V_x = params.V_x
 
     V_ind_mean = jnp.mean(V_ia)
@@ -204,7 +229,11 @@ def actuator_disk_power(V_ia, power):
     return P_actuator
 
 def flatblade(R, c, beta, N, plot=False):
-    # Flat Blade Demo Model
+    '''
+    Flat Blade Demo Model. Inputs a blade of fixed chord and radial distribution 
+    and solves+plots induced velocity.
+    '''
+    # 
     # Debug NAN's and enable 64 bit precision
     jax.config.update("jax_enable_x64", True)
     jax.config.update("jax_debug_nans", True)
@@ -235,7 +264,7 @@ def flatblade(R, c, beta, N, plot=False):
                 V_ia_0 = V_ia_0[:,None]
             )
     # Register dataclass as a PyTree
-    #jax.tree_util.register_dataclass(Params)
+    #jax.tree_util.register_dataclass(Params) (depreciated for now)
     
     # Solve Induced Velocity
     V_ia = induced_velocity(params)  # shape (Nr, Npsi)
@@ -302,5 +331,6 @@ if __name__ == "__main__":
         plt.show()
 
     elif demo_solve == "flat":
-        flatblade()
+        c = np.ones_like(r)
+        flatblade(1, 0.1, np.pi/8, 2, plot=True)
 

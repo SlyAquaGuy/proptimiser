@@ -16,6 +16,9 @@ def curvature_penalty(x):
 
 
 def run_optimization():
+    '''
+    WIP. Code currently doesn't solve, and a re-implementation is required.
+    '''
     # 64 Bit Precision, otherwise thrust residuals don't converge
     jax.config.update("jax_enable_x64", True)
     # --- 1. Setup ---

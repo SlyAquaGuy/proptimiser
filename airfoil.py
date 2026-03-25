@@ -9,9 +9,14 @@ from airflow import calc_phi
 ## ---Parametric Coefficients---
 # (good for approximate analysis, use LUT for more accuracy)
 
-def parametric_coeffs(V_ia, params, debug=False):
-    # Return parametric estimations of lift, drag, and moment coefficients based on angle of attack
-    # Calculate effective angle of attack for the airfoil
+def parametric_coeffs(V_ia, params, plot=False):
+
+    '''
+    Return parametric estimations of lift, drag, and moment coefficients based on angle of attack
+    Calculate effective angle of attack for the airfoil.
+
+    For plots and a rundown of the theory, see (M. Nahon, 2015)
+    '''
     beta = params.beta
     phi = calc_phi(V_ia, params)
     alpha = beta-phi
@@ -45,7 +50,7 @@ def parametric_coeffs(V_ia, params, debug=False):
     C_D = jnp.where(stall, C_D_stall, C_D_unstall)
     C_M = jnp.sign(alpha)*jnp.where(stall, C_M_stall, C_M_unstall)
 
-    if debug:
+    if plot:
         # Debug plot of parametric coefficients
         plt.plot(jnp.degrees(alpha), C_L)
         plt.plot(jnp.degrees(alpha), C_D)
@@ -59,10 +64,16 @@ def parametric_coeffs(V_ia, params, debug=False):
     return C_L, C_D, C_M
 
 def lookup_coeffs(V_ia, params):
-    # Placeholder for future lookup table implementation, use parametric for now to allow compile
+    '''
+    Placeholder for future lookup table implementation, 
+    use parametric for now to allow compile
+    '''
     C_L, C_D, C_M  = parametric_coeffs(V_ia, params)
     # Look up/estimate CL/CD from CFD data tables
-    # Input parameters of alpha, Re, Ma, airfoil type. Return suitable coefficients that minimise chord.
+
+    # Input parameters of alpha, Re, Ma, airfoil type. Return airfoil with suitable coefficients that minimise chord.
+
+
     return C_L, C_D, C_M
 
 def aero_coeffs(V_ia, params):
@@ -71,3 +82,9 @@ def aero_coeffs(V_ia, params):
                     [parametric_coeffs, lookup_coeffs],
                     V_ia, params)
     return C_L, C_D, C_M
+
+
+if __name__ == "__main__":
+
+    V_ia = 
+    parametric_coeffs()
